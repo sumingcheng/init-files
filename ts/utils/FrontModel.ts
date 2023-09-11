@@ -1,12 +1,17 @@
 import 'reflect-metadata'
 import _ from 'lodash'
-import {RequestDataBaseType} from './RequestType'
+
 
 // 定义数据属性类型的枚举
 enum ServerPropertyType {
   NORMAL = 'normal',
   ARRAY = 'array',
   OBJECT = 'object',
+}
+
+// 请求数据类型
+export class RequestDataBaseType {
+  [key: string]: string | number | object | boolean
 }
 
 // 定义绑定的属性接口
