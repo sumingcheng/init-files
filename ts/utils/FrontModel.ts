@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import * as _ from 'lodash-es'
+import * as _ from 'lodash'
 import { RequestDataBaseType } from './RequestType'
 
 export interface IHttpBindNormal {
