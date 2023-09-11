@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "lodash": "^4.17.21",
     "reflect-metadata": "^0.1.13",
     "vue": "^3.3.4"
   },

@@ -1,193 +1,168 @@
 import 'reflect-metadata'
-import * as _ from 'lodash'
-import { RequestDataBaseType } from './RequestType'
+import _ from 'lodash'
+import {RequestDataBaseType} from './RequestType'
 
+// 定义数据属性类型的枚举
+enum ServerPropertyType {
+  NORMAL = 'normal',
+  ARRAY = 'array',
+  OBJECT = 'object',
+}
+
+// 定义绑定的属性接口
 export interface IHttpBindNormal {
-  serverPropertyTypeName: string
-  serverPropertyPath: string
-  propertyName: string
+  serverPropertyTypeName: ServerPropertyType;
+  serverPropertyPath: string;
+  propertyName: string;
+  createItemFunction?: string;
 }
 
-export interface IHttpBindArray extends IHttpBindNormal {
-  createOneItem?: string
-}
-
-export interface IHttpBindObject extends IHttpBindNormal {
-  createOneItem?: string
-}
-
+// 普通属性绑定函数
 export const HttpBindNormal = (serverPropertyPath?: string) => {
+  return defineMetadataForBinding(ServerPropertyType.NORMAL, serverPropertyPath)
+}
+
+// 数组属性绑定函数
+export const HttpBindArray = (serverPropertyPath: string, createItemFunction?: string) => {
+  return defineMetadataForBinding(ServerPropertyType.ARRAY, serverPropertyPath, createItemFunction)
+}
+
+// 对象属性绑定函数
+export const HttpBindObject = (serverPropertyPath: string, createItemFunction?: string) => {
+  return defineMetadataForBinding(ServerPropertyType.OBJECT, serverPropertyPath, createItemFunction)
+}
+
+// 辅助函数：为属性定义元数据，减少重复代码
+const defineMetadataForBinding = (serverPropertyTypeName: ServerPropertyType, serverPropertyPath?: string, createItemFunction?: string) => {
   return (target: object, propertyName: string) => {
     const metaValue: IHttpBindNormal = {
-      serverPropertyTypeName: 'normal',
+      serverPropertyTypeName,
       serverPropertyPath: serverPropertyPath || propertyName,
       propertyName,
+      createItemFunction,
     }
-    Reflect.defineMetadata(propertyName, metaValue, target)
+    Reflect.defineMetadata(propertyName, metaValue, target)  // 使用元数据API定义属性
   }
 }
 
-export const HttpBindArray = (
-  serverPropertyPath: string,
-  createOneItem?: string
-) => {
-  return (target: object, propertyName: string) => {
-    const metaValue: IHttpBindArray = {
-      serverPropertyTypeName: 'array',
-      serverPropertyPath: serverPropertyPath || propertyName,
-      propertyName,
-      createOneItem,
-    }
-    Reflect.defineMetadata(propertyName, metaValue, target)
-  }
-}
-
-export const HttpBindObject = (
-  serverPropertyPath: string,
-  createOneItem?: string
-) => {
-  return (target: object, propertyName: string) => {
-    const metaValue: IHttpBindObject = {
-      serverPropertyTypeName: 'object',
-      serverPropertyPath: serverPropertyPath || propertyName,
-      propertyName,
-      createOneItem,
-    }
-    Reflect.defineMetadata(propertyName, metaValue, target)
-  }
-}
-
+// 定义前端模型的抽象类
 export abstract class FrontModel {
+  // 请求前的处理函数，子类可以重写
   beforeGetRequestBody() {
-    // override by child class.
-  }
-  afterInitFromResponse() {
-    // override by child class.
   }
 
+  // 响应后的处理函数，子类可以重写
+  afterInitFromResponse() {
+  }
+
+  // 从响应初始化数据
   initFromResponse(res: object) {
     const metadataKeys: Array<string> = Reflect.getMetadataKeys(this)
     metadataKeys.forEach((metadataKey: string) => {
-      const metadataValue: IHttpBindNormal = Reflect.getMetadata(
-        metadataKey,
-        this
-      )
-      const resValue = _.get(res, metadataValue.serverPropertyPath)
-      if (
-        resValue &&
-        resValue !== null &&
-        resValue !== undefined &&
-        metadataValue.serverPropertyTypeName === 'normal'
-      ) {
-        _.set(this, metadataValue.propertyName, resValue)
-      } else if (
-        metadataValue.serverPropertyTypeName === 'array' &&
-        Array.isArray(resValue)
-      ) {
-        const arrMetaValue = metadataValue as IHttpBindArray
-        const resValueArr = resValue as Array<object>
-        if (arrMetaValue.createOneItem) {
-          const createOneItemFun = _.get(this, arrMetaValue.createOneItem)
-          const data = _.get(this, arrMetaValue.propertyName)
-          if (
-            createOneItemFun &&
-            typeof createOneItemFun === 'function' &&
-            Array.isArray(data)
-          ) {
-            const arrData = data as Array<FrontModel>
-            resValueArr.forEach((resItem: object) => {
-              const item = createOneItemFun()
-              item.initFromResponse(resItem)
-              arrData.push(item)
-            })
-          }
-        }
-      } else if (
-        metadataValue.serverPropertyTypeName === 'object' &&
-        resValue
-      ) {
-        const objectMetaValue = metadataValue as IHttpBindObject
-        if (objectMetaValue.createOneItem) {
-          const createOneItemFun = _.get(this, objectMetaValue.createOneItem)
-          if (createOneItemFun && typeof createOneItemFun === 'function') {
-            const item = createOneItemFun()
-            item.initFromResponse(resValue)
-            _.set(this, metadataValue.propertyName, item)
-          }
-        }
-      }
+      const metadataValue: IHttpBindNormal = Reflect.getMetadata(metadataKey, this)
+      this.handleResponseDataByType(metadataValue, res)
     })
     this.afterInitFromResponse()
   }
 
-  // Todo: not support path property yet. 2022.5.7
+  // 根据类型处理响应数据
+  private handleResponseDataByType(metadataValue: IHttpBindNormal, res: object) {
+    const resValue = _.get(res, metadataValue.serverPropertyPath)
+    switch (metadataValue.serverPropertyTypeName) {
+      case ServerPropertyType.NORMAL:
+        if (resValue) {
+          _.set(this, metadataValue.propertyName, resValue)
+        }
+        break
+      case ServerPropertyType.ARRAY:
+        this.handleArrayResponse(metadataValue, resValue)
+        break
+      case ServerPropertyType.OBJECT:
+        this.handleObjectResponse(metadataValue, resValue)
+        break
+    }
+  }
+
+  // 处理数组类型的响应数据
+  private handleArrayResponse(metadataValue: IHttpBindNormal, resValue: any) {
+    if (Array.isArray(resValue) && metadataValue.createItemFunction) {
+      const createItemFunction = _.get(this, metadataValue.createItemFunction)
+      const data = _.get(this, metadataValue.propertyName)
+      if (typeof createItemFunction === 'function' && Array.isArray(data)) {
+        resValue.forEach((resItem: object) => {
+          const item = createItemFunction()
+          item.initFromResponse(resItem)
+          data.push(item)
+        })
+      }
+    }
+  }
+
+  // 处理对象类型的响应数据
+  private handleObjectResponse(metadataValue: IHttpBindNormal, resValue: any) {
+    if (resValue && metadataValue.createItemFunction) {
+      const createItemFunction = _.get(this, metadataValue.createItemFunction)
+      if (typeof createItemFunction === 'function') {
+        const item = createItemFunction()
+        item.initFromResponse(resValue)
+        _.set(this, metadataValue.propertyName, item)
+      }
+    }
+  }
+
+  // 获取请求体
   getRequestBody(): RequestDataBaseType {
     const metadataKeys: Array<string> = Reflect.getMetadataKeys(this)
     const requestBody = new RequestDataBaseType()
     metadataKeys.forEach((metadataKey: string) => {
-      const metadataValue: IHttpBindNormal = Reflect.getMetadata(
-        metadataKey,
-        this
-      )
+      const metadataValue: IHttpBindNormal = Reflect.getMetadata(metadataKey, this)
       const propertyValue = _.get(this, metadataValue.propertyName)
-      if (metadataValue.serverPropertyTypeName === 'normal') {
-        Reflect.set(
-          requestBody,
-          metadataValue.serverPropertyPath,
-          propertyValue
-        )
-      } else if (
-        metadataValue.serverPropertyTypeName === 'array' &&
-        Array.isArray(propertyValue)
-      ) {
-        const propertyValueArr = propertyValue as Array<FrontModel>
-        const requestArr = new Array<object>()
-        propertyValueArr.forEach((resItem: FrontModel) => {
-          requestArr.push(resItem.getRequestBody())
-        })
-        _.set(requestBody, metadataValue.serverPropertyPath, requestArr)
-      } else if (
-        metadataValue.serverPropertyTypeName === 'object' &&
-        propertyValue
-      ) {
-        const objectValue = propertyValue as FrontModel
-        _.set(
-          requestBody,
-          metadataValue.serverPropertyPath,
-          objectValue.getRequestBody()
-        )
+      switch (metadataValue.serverPropertyTypeName) {
+        case ServerPropertyType.NORMAL:
+          _.set(requestBody, metadataValue.serverPropertyPath, propertyValue)
+          break
+        case ServerPropertyType.ARRAY:
+          if (Array.isArray(propertyValue)) {
+            _.set(requestBody, metadataValue.serverPropertyPath, propertyValue.map(item => item.getRequestBody()))
+          }
+          break
+        case ServerPropertyType.OBJECT:
+          if (propertyValue) {
+            _.set(requestBody, metadataValue.serverPropertyPath, propertyValue.getRequestBody())
+          }
+          break
       }
     })
     return requestBody
   }
-  shallowCopyFromSelf(target: FrontModel): FrontModel {
-    const keys = Reflect.ownKeys(this)
-    keys.forEach((key) => {
-      const value = Reflect.get(this, key)
-      Reflect.set(target, key, value)
-    })
+
+  // 执行浅拷贝
+  shallowCopyFromSelf<T extends FrontModel>(target: T): T {
+    Object.assign(target, this)
     return target
   }
 }
 
+// 定义模型项类，继承自前端模型类
 export class FrontModelItem extends FrontModel {
   uniqueIndex: symbol
 
   constructor() {
     super()
-    this.uniqueIndex = Symbol()
+    this.uniqueIndex = Symbol()  // 创建唯一索引
   }
 
+  // 判断是否为相同的项
   isSameItem(item: FrontModelItem | undefined): boolean {
-    return item
-      ? Reflect.get(item, 'uniqueIndex') === Reflect.get(this, 'uniqueIndex')
-      : false
+    return item ? item.uniqueIndex === this.uniqueIndex : false
   }
 
+  // 判断是否不是相同的项
   isNotSameItem(item: FrontModelItem | undefined): boolean {
     return !this.isSameItem(item)
   }
 
+  // 刷新唯一索引
   refreshUniqueIndex() {
     this.uniqueIndex = Symbol()
   }
