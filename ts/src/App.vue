@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import {Demo} from './index'
-import {ref} from 'vue'
+import {reactive} from 'vue'
 
-const demo = ref(new Demo())
+const demo = reactive(new Demo())
 console.log(demo)
-console.log(demo.value.getRequestBody())
+console.log(demo.getRequestBody())
 </script>
 
 <template>

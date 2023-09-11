@@ -7,8 +7,5 @@ export class Demo extends FrontModel {
 
   constructor() {
     super()
-    this.code = ''
-    this.message = ''
-    this.pageInfo = ''
   }
 }
